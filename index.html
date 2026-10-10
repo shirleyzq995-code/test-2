@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI量化选股决策系统</title>
+  <style>
+    @property --edge-angle {
+      syntax: "<angle>";
+      inherits: false;
+      initial-value: 0deg;
+    }
+    :root {
+      color-scheme: dark;
+      --chrome: #303236;
+      --page: #171819;
+      --muted: #a8adb5;
+      --line: #42454a;
+      --blue: #2185f5;
+      --green: #00a870;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: var(--page); color: #d6d9df; font: 13px/1.4 "Microsoft YaHei", "Segoe UI", sans-serif; }
+    .app { display: grid; grid-template-rows: 33px 1fr 26px; width: 100%; height: 100vh; min-height: 300px; }
+    .topbar { display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--chrome); border-bottom: 1px solid #4a4d52; white-space: nowrap; }
+    .brand { display: flex; align-items: center; gap: 5px; color: #438cf4; font-size: 16px; font-weight: 700; margin-right: 2px; }
+    .brand-mark { color: #31c48d; font-size: 19px; line-height: 1; }
+    .top-tab, .action { height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid #484b50; border-radius: 4px; color: #c5c9cf; background: #393b40; cursor: pointer; transition: background .16s ease, border-color .16s ease, color .16s ease, transform .12s ease; }
+    .top-tab:hover, .action:hover { background: #484b52; border-color: #666b74; color: #fff; }
+    .top-tab:active, .action:active { transform: translateY(1px); }
+    .top-tab.selected, .action.selected { border-color: #3989f6; background: #214d80; color: #fff; }
+    .search { position: absolute; left: 50%; transform: translateX(-50%); width: 132px; height: 26px; display: flex; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid #222428; border-radius: 4px; background: #232427; color: #858a91; }
+    .top-spacer { flex: 1; }
+    .action { padding: 0 8px; font-size: 12px; }
+    .user { border-left: 1px solid #4b4e53; padding-left: 10px; color: #c4c8cf; }
+    .workspace { min-height: 0; display: grid; grid-template-columns: 47px 1fr; }
+    .sidebar { display: flex; flex-direction: column; align-items: center; gap: 3px; padding-top: 3px; background: #303236; border-right: 1px solid #3e4146; }
+    .nav-item { width: 40px; min-height: 41px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; color: #b8bdc5; border-radius: 5px; font-size: 11px; cursor: pointer; transition: background .16s ease, color .16s ease, transform .12s ease; }
+    .nav-item:hover { background: #44474d; color: #fff; }
+    .nav-item:active { transform: scale(.96); }
+    .nav-icon { font-size: 18px; height: 20px; line-height: 20px; }
+    .nav-item.active { background: var(--blue); color: white; font-weight: 600; }
+    .main { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; scrollbar-gutter: stable; overflow-anchor: none; padding: 34px clamp(20px, 4vw, 64px) 40px; background: radial-gradient(ellipse at 50% -25%, #25272a 0, #191a1c 54%); }
+    .plans-head { display: none; }
+    .plans-grid { display: grid; grid-template-columns: repeat(3, 560px); align-items: stretch; justify-self: start; gap: 24px; width: max-content; margin: 0; }
+    .main:not(.detail-view) .plans-grid { margin-inline-start: max(0px, calc((100% - 1728px) / 2)); }
+    .detail-panel { display: none; }
+    .detail-toolbar { order: 2; display: flex; justify-content: flex-end; margin-top: auto; padding-top: 14px; }
+    .detail-back { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid #414348; border-radius: 5px; background: #252629; color: #c6cad1; font: inherit; font-size: 12px; cursor: pointer; transition: background .16s ease, border-color .16s ease, color .16s ease; }
+    .detail-back:hover { border-color: #646870; background: #303236; color: #fff; }
+    .detail-tiles { order: 1; display: flex; flex-flow: row wrap; align-content: flex-start; gap: 14px; }
+    .placeholder-card { flex: 0 0 320px; width: 320px; aspect-ratio: 16 / 9; min-height: 0; padding: 12px; border: 1px solid #34363a; border-radius: 10px; background: linear-gradient(145deg, #242629, #202123 70%, #1d1e20); }
+    .placeholder-block { width: 100%; height: 100%; min-height: 0; border: 1px solid #303236; border-radius: 6px; background: linear-gradient(135deg, #292b2f, #25272a 55%, #222427); }
+    .placeholder-card:nth-child(2n) .placeholder-block { background: linear-gradient(135deg, #282a2d, #242629 55%, #202225); }
+    .main.detail-view { grid-template-columns: 190px minmax(0, 1fr); align-content: start; align-items: start; gap: 20px; padding: 24px; }
+    .main.detail-view .detail-panel { display: flex; flex-direction: column; grid-column: 2; align-self: stretch; min-width: 0; min-height: 100%; }
+    .main.detail-view .detail-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .main.detail-view .plans-grid { grid-column: 1; grid-template-columns: minmax(0, 1fr); gap: 10px; width: 190px; max-width: none; margin: 0; }
+    .main.detail-view .service-card { --card-radius: 9px; width: 100%; min-width: 0; min-height: 82px; height: 82px; padding: 12px; border-radius: var(--card-radius); }
+    .main.leaving .service-card { animation: package-card-collapse .22s cubic-bezier(.4,0,.7,1) both; pointer-events: none; }
+    .main.leaving .service-card.leave-lead { animation-delay: 0s; }
+    .main.leaving .service-card.leave-second { animation-delay: .11s; }
+    .main.leaving .service-card.leave-third { animation-delay: .22s; }
+    @keyframes package-card-collapse { to { opacity: 0; filter: blur(1px); transform: translateX(140px); } }
+    .main.detail-view.opening .service-card { animation: package-sidebar-enter .28s cubic-bezier(.2,.75,.25,1) both; }
+    .main.detail-view.opening .service-card:nth-child(2) { animation-delay: .07s; }
+    .main.detail-view.opening .service-card:nth-child(3) { animation-delay: .14s; }
+    @keyframes package-sidebar-enter { from { opacity: 0; filter: blur(2px); transform: translateX(-48px) scale(.94); } to { opacity: 1; filter: blur(0); transform: translateX(0) scale(1); } }
+    .main.detail-view.opening .detail-panel { animation: detail-panel-enter .3s cubic-bezier(.2,.7,.25,1) .07s both; }
+    @keyframes detail-panel-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+    .main.detail-view .service-card:hover, .main.detail-view .service-card:focus-visible { transform: translateY(-2px); }
+    .main.detail-view .card-content { flex-direction: row; align-items: center; gap: 10px; }
+    .main.detail-view .card-topline { width: auto; flex: 0 0 auto; }
+    .main.detail-view .card-eyebrow { font-size: 9px; }
+    .main.detail-view .card-title { margin: 0; font-size: 14px; white-space: nowrap; }
+    .main.detail-view .card-art { flex: 0 0 0; height: 0; min-height: 0; margin: 0; border-width: 0; opacity: 0; }
+    .main.detail-view .service-card.selected { border-color: color-mix(in srgb, var(--accent), #3b3d41 32%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 58%), 0 0 7px var(--glow); }
+    @media (max-width: 900px) { .main.detail-view { grid-template-columns: 160px minmax(0, 1fr); gap: 12px; } .main.detail-view .plans-grid { width: 160px; } }
+    @media (max-width: 580px) { .main.detail-view { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 16px; } .main.detail-view .plans-grid { grid-column: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; } .main.detail-view .detail-panel { grid-column: 1; } .main.detail-view .service-card { height: 72px; min-height: 72px; padding: 8px; } .main.detail-view .card-content { gap: 5px; justify-content: center; } .main.detail-view .card-topline { display: none; } .main.detail-view .card-title { font-size: 12px; } .main.detail-view .detail-tiles { gap: 9px; } .placeholder-card { padding: 10px; } }
+    .service-card {
+      --card-radius: 20px;
+      --accent: #f04444;
+      --highlight: #ffc17a;
+      --glow: rgba(240, 68, 68, .2);
+      position: relative;
+      isolation: isolate;
+      width: 560px;
+      min-width: 560px;
+      min-height: 1050px;
+      height: 1050px;
+      padding: 0;
+      overflow: visible;
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, #3b3d41 80%);
+      border-radius: var(--card-radius);
+      color: #f4f5f7;
+      background:
+        radial-gradient(ellipse 145% 46% at 112% -8%, color-mix(in srgb, var(--highlight) 54%, transparent) 0%, color-mix(in srgb, var(--highlight) 38%, transparent) 22%, color-mix(in srgb, var(--accent) 25%, transparent) 48%, transparent 100%),
+        radial-gradient(ellipse 82% 58% at -8% 108%, color-mix(in srgb, var(--accent) 46%, transparent) 0%, color-mix(in srgb, var(--accent) 34%, transparent) 30%, color-mix(in srgb, var(--accent) 18%, transparent) 58%, transparent 100%),
+        #030304;
+      text-align: left;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      transition: transform .34s ease, box-shadow .34s ease, border-color .34s ease, filter .34s ease;
+    }
+    .service-card::before {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      inset: -2px;
+      padding: 1.5px;
+      border-radius: calc(var(--card-radius) + 2px);
+      background: conic-gradient(from var(--edge-angle), transparent 0deg 265deg, color-mix(in srgb, var(--accent) 82%, transparent) 286deg, var(--highlight) 308deg, #fff 318deg, var(--highlight) 330deg, color-mix(in srgb, var(--accent) 78%, transparent) 350deg, transparent 360deg);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      opacity: 0;
+      box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 75%, transparent), 0 0 12px color-mix(in srgb, var(--highlight) 48%, transparent);
+      pointer-events: none;
+      transition: opacity .55s ease;
+    }
+    .main:not(.detail-view) .service-card:hover::before,
+    .main:not(.detail-view) .service-card:focus-visible::before { opacity: .9; animation: edge-light-travel 6s linear infinite; }
+    @keyframes edge-light-travel { to { --edge-angle: 360deg; } }
+    .service-card::after {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      border-radius: var(--card-radius);
+      background: linear-gradient(112deg, transparent 31%, rgba(255,255,255,.025) 40%, rgba(255,255,255,.16) 50%, rgba(255,255,255,.04) 60%, transparent 69%);
+      background-size: 240% 100%;
+      background-position: 100% 0;
+      opacity: 0;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+    .main:not(.detail-view) .service-card:hover::after,
+    .main:not(.detail-view) .service-card:focus-visible::after { animation: card-reflection-sweep 3.2s ease-in-out infinite; }
+    @keyframes card-reflection-sweep {
+      0% { opacity: 0; background-position: 100% 0; }
+      18% { opacity: .95; }
+      100% { opacity: 0; background-position: 0 0; }
+    }
+    .service-card:hover, .service-card:focus-visible {
+      z-index: 1;
+      transform: translateY(-3px);
+      border-color: color-mix(in srgb, var(--accent), #3b3d41 32%);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 58%), 0 0 11px var(--glow), 0 13px 28px rgba(0,0,0,.42);
+      filter: brightness(1.04);
+      outline: none;
+    }
+    .service-card.selected { border-color: color-mix(in srgb, var(--accent), #3b3d41 32%); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 58%), 0 0 11px var(--glow); }
+    .service-card.blue { --accent: #2589ff; --highlight: #a7ebff; --glow: rgba(38,139,255,.2); }
+    .service-card.gold { --accent: #d6b86d; --highlight: #fff0b6; --glow: rgba(214,184,109,.19); }
+    .blue-aura { position: absolute; z-index: 0; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(ellipse 58% 28% at 50% 48%, rgba(62,151,255,.36), transparent 80%), radial-gradient(ellipse 72% 42% at 52% 49%, rgba(41,91,255,.22), transparent 82%), radial-gradient(ellipse 42% 22% at 53% 56%, rgba(130,220,255,.18), transparent 78%); opacity: 0; transition: opacity .7s ease; }
+    .blue-card-active .blue-aura { opacity: 1; animation: blue-aura-breathe 5.5s ease-in-out infinite alternate; }
+    @keyframes blue-aura-breathe { from { filter: brightness(.84); transform: scale(.96); } to { filter: brightness(1.18); transform: scale(1.04); } }
+    .blue-scene { position: absolute; z-index: 2; inset: 0; overflow: clip; border-radius: inherit; perspective: 900px; transform-style: preserve-3d; pointer-events: none; }
+    .blue-core { position: absolute; z-index: 4; left: 50%; top: 50%; display: grid; width: 220px; height: 220px; place-items: center; transform: translate3d(-50%, -50%, 0); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 48px; background: linear-gradient(145deg, rgba(20,38,60,.95), rgba(4,8,15,.96)); color: var(--highlight); font-size: 94px; text-shadow: 0 0 28px var(--highlight); box-shadow: 0 0 38px rgba(37,137,255,.26), inset 0 0 30px rgba(49,139,255,.2); transition: filter .5s ease, box-shadow .5s ease, border-color .5s ease; }
+    .blue-card-active .blue-core { filter: brightness(1.18); border-color: color-mix(in srgb, var(--accent) 72%, transparent); box-shadow: 0 0 64px rgba(37,137,255,.42), inset 0 0 38px rgba(73,166,255,.28); }
+    .blue-satellite { position: absolute; z-index: 2; left: var(--x, 50%); top: var(--y, 50%); display: grid; width: var(--size, 225px); height: var(--height, 126.56px); place-items: center; transform: translate3d(-50%, -50%, var(--depth, 0px)) scale(1); transform-style: preserve-3d; translate: 0 0; border: 1px solid rgba(104,185,255,.58); border-radius: 24px; background: linear-gradient(145deg, rgba(18,38,64,.96), rgba(4,8,16,.97)); box-shadow: 0 8px 34px rgba(0,0,0,.44), 0 0 28px rgba(42,132,255,.24), inset 0 0 22px rgba(62,147,255,.2); opacity: 0; filter: blur(9px); }
+    .blue-card-active .blue-satellite { animation: blue-satellite-appear 1.15s cubic-bezier(.2,.7,.25,1) var(--delay, 0s) both, blue-satellite-float var(--duration, 5s) ease-in-out calc(var(--delay, 0s) + 1.15s) infinite; }
+    @keyframes blue-satellite-appear { from { opacity: 0; filter: blur(5px); } to { opacity: .94; filter: blur(0); } }
+    @keyframes blue-satellite-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 var(--drift, -12px); } }
+    .main.detail-view .blue-scene { display: none; }
+    .gold-scene { position: absolute; z-index: 2; inset: 0; overflow: clip; border-radius: inherit; pointer-events: none; }
+    .gold-tile-rows { position: absolute; z-index: 1; inset: 0; overflow: visible; border-radius: inherit; transform: rotate(30deg) scale(1.12); transform-origin: center; opacity: 0; transition: opacity .65s ease; }
+    .gold-tile-row { position: absolute; left: -320px; width: calc(100% + 640px); height: 290px; overflow: visible; transform: translateY(-50%); }
+    .gold-tile-row:nth-child(1) { top: 30%; }
+    .gold-tile-row:nth-child(2) { top: 50%; left: -170px; }
+    .gold-tile-row:nth-child(3) { top: 70%; }
+    .gold-tile-track { display: flex; width: max-content; height: 100%; align-items: center; gap: 34px; will-change: transform; }
+    .gold-tile { flex: none; width: 300px; height: 168.75px; border: 1px solid rgba(219,190,117,.38); border-radius: 24px; background: linear-gradient(145deg, rgba(63,54,34,.64), rgba(11,11,10,.94)); box-shadow: 0 7px 28px rgba(0,0,0,.3), inset 0 0 20px rgba(214,184,109,.08); }
+    .gold-core { position: absolute; z-index: 3; left: 50%; top: 50%; width: 220px; height: 220px; transform: translate(-50%, -50%); border: 1px solid rgba(214,184,109,.42); border-radius: 48px; background: linear-gradient(145deg, rgba(48,42,29,.97), rgba(7,8,9,.98)); box-shadow: 0 0 38px rgba(214,184,109,.18), inset 0 0 30px rgba(214,184,109,.12); transition: border-color .5s ease, box-shadow .5s ease; }
+    .gold-card-active .gold-tile-rows { opacity: .76; }
+    .gold-card-active .gold-tile-row:nth-child(odd) .gold-tile-track { animation: gold-row-left 56s linear infinite; }
+    .gold-card-active .gold-tile-row:nth-child(even) .gold-tile-track { animation: gold-row-right 62s linear infinite; }
+    .gold-card-active .gold-core { border-color: rgba(238,209,135,.72); box-shadow: 0 0 52px rgba(214,184,109,.3), inset 0 0 36px rgba(214,184,109,.18); }
+    @keyframes gold-row-left { to { transform: translateX(-50%); } }
+    @keyframes gold-row-right { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+    .main.detail-view .gold-scene { display: none; }
+    .red-ambient { position: absolute; z-index: 0; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; isolation: isolate; }
+    .red-ambient::before { content: ""; position: absolute; inset: -12% -18%; border-radius: 48%; background: radial-gradient(ellipse 34% 19% at 18% 28%, rgba(249,37,60,.42), transparent 86%), radial-gradient(ellipse 39% 24% at 75% 40%, rgba(255,99,80,.34), transparent 89%), radial-gradient(ellipse 43% 27% at 48% 82%, rgba(202,27,52,.39), transparent 87%); background-size: 160% 160%, 165% 165%, 170% 170%; background-position: 0% 0%, 100% 0%, 48% 100%; filter: blur(27px); mix-blend-mode: screen; opacity: .66; animation: red-gas-flow 19s ease-in-out infinite alternate; animation-play-state: paused; }
+    .red-ambient::after { content: ""; position: absolute; inset: -8% -16%; background: radial-gradient(ellipse 52% 13% at 35% 48%, rgba(255,112,91,.13), transparent 84%), radial-gradient(ellipse 46% 12% at 70% 69%, rgba(255,59,76,.12), transparent 87%); background-size: 170% 170%; background-position: 0% 10%; filter: blur(21px); mix-blend-mode: screen; opacity: .52; animation: red-gas-wisp 15s ease-in-out infinite alternate; animation-play-state: paused; }
+    .service-card.red:hover .red-ambient::before, .service-card.red:focus-visible .red-ambient::before, .service-card.red:hover .red-ambient::after, .service-card.red:focus-visible .red-ambient::after { animation-play-state: running; }
+    @keyframes red-gas-flow { 0% { transform: translate3d(-4%, -2%, 0) scale(.98); background-position: 0% 0%, 100% 0%, 48% 100%; } 50% { transform: translate3d(2%, 2.5%, 0) scale(1.035); background-position: 48% 42%, 56% 50%, 25% 56%; } 100% { transform: translate3d(4%, -2%, 0) scale(1); background-position: 88% 76%, 10% 82%, 78% 12%; } }
+    @keyframes red-gas-wisp { 0% { transform: translate3d(3%, -2%, 0) scale(.98); background-position: 0% 10%; } 100% { transform: translate3d(-4%, 3%, 0) scale(1.05); background-position: 100% 86%; } }
+    .orbit-scene { position: absolute; z-index: 2; inset: 0; overflow: clip; border-radius: inherit; perspective: 900px; transform-style: preserve-3d; pointer-events: none; }
+    .orbit-system { position: absolute; inset: 0; transform-style: preserve-3d; }
+    .orbit-icon { position: absolute; left: 50%; top: 50%; display: grid; width: 210px; height: 118.125px; margin: -59.0625px 0 0 -105px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 54%, transparent); border-radius: 22px; background: color-mix(in srgb, #08090b 82%, var(--accent) 18%); color: var(--highlight); font-size: 52px; text-shadow: 0 0 18px var(--highlight); opacity: 0; filter: blur(7px); transform: translate3d(0, 0, -70px) scale(.62); will-change: transform, opacity, filter; }
+    .orbit-center { position: absolute; left: 50%; top: 50%; display: grid; width: 220px; height: 220px; place-items: center; transform: translate(-50%, -50%) translateZ(0); border: 1px solid color-mix(in srgb, var(--accent) 62%, transparent); border-radius: 48px; background: color-mix(in srgb, #08090b 78%, var(--accent) 22%); color: var(--highlight); font-size: 96px; text-shadow: 0 0 28px var(--highlight); box-shadow: 0 0 38px var(--glow), inset 0 0 28px color-mix(in srgb, var(--accent) 20%, transparent); opacity: .62; filter: brightness(.78); transition: opacity .45s ease, filter .45s ease, box-shadow .45s ease; }
+    .service-card.red:hover .orbit-center, .service-card.red:focus-visible .orbit-center { opacity: 1; filter: brightness(1.18); box-shadow: 0 0 54px color-mix(in srgb, var(--glow), var(--accent) 24%), inset 0 0 34px color-mix(in srgb, var(--accent) 30%, transparent); }
+    .main.detail-view .orbit-scene { display: none; }
+    .ticker { display: flex; align-items: center; gap: 11px; overflow: hidden; padding: 0 5px; background: #303236; border-top: 1px solid #404348; color: var(--green); font-size: 11px; white-space: nowrap; }
+    .ticker .label { color: #d0d3d8; }
+    .clock { margin-left: auto; color: #c0c4cb; padding: 0 6px; }
+    @media (max-width: 720px) {
+      .brand { font-size: 13px; }
+      .top-tab { display: none; }
+      .search { position: static; transform: none; width: min(28vw, 132px); margin-left: auto; }
+      .action.hide-mobile { display: none; }
+      .user { display: none; }
+      .ticker { gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">✣</span><span>AI量化选股决策系统</span></div>
+      <div class="top-tab" role="button" tabindex="0">♙ 企业文化</div>
+      <div class="top-tab" role="button" tabindex="0">♫ 音乐学院</div>
+      <div class="search"><span>⌕</span><span>股票代码/名称</span></div>
+      <div class="top-spacer"></div>
+      <div class="action hide-mobile" role="button" tabindex="0" aria-label="消息">▤</div>
+      <div class="action" role="button" tabindex="0">隐藏代码名称</div>
+      <div class="action" role="button" tabindex="0">设置</div>
+      <div class="user">8gIDveDEfc</div>
+    </header>
+    <div class="workspace">
+      <nav class="sidebar" aria-label="主导航">
+        <div class="nav-item" role="button" tabindex="0"><span class="nav-icon">▣</span><span>行情</span></div>
+        <div class="nav-item"><span class="nav-icon">▧</span><span>自选</span></div>
+        <div class="nav-item"><span class="nav-icon">⬡</span><span>量化</span></div>
+        <div class="nav-item"><span class="nav-icon">♧</span><span>云析</span></div>
+        <div class="nav-item active" aria-current="page"><span class="nav-icon">▤</span><span>服务包</span></div>
+        <div class="nav-item"><span class="nav-icon">♧</span><span>个股</span></div>
+        <div class="nav-item"><span class="nav-icon">♧</span><span>选股</span></div>
+        <div class="nav-item"><span class="nav-icon">▣</span><span>直播</span></div>
+      </nav>
+      <main class="main" aria-label="服务套餐">
+        <section class="plans-grid" aria-label="套餐选项">
+          <article class="service-card red" aria-label="正式版套餐" tabindex="0" role="button" aria-pressed="false">
+            <div class="red-ambient" aria-hidden="true"></div>
+            <div class="orbit-scene" aria-hidden="true">
+              <div class="orbit-system">
+                <span class="orbit-icon"></span><span class="orbit-icon"></span>
+                <span class="orbit-icon"></span><span class="orbit-icon"></span>
+                <span class="orbit-icon"></span><span class="orbit-icon"></span>
+                <span class="orbit-icon"></span><span class="orbit-icon"></span>
+              </div>
+              <span class="orbit-center"></span>
+            </div>
+          </article>
+          <article class="service-card blue" aria-label="排名版套餐" tabindex="0" role="button" aria-pressed="false">
+            <div class="blue-aura" aria-hidden="true"></div>
+            <div class="blue-scene" aria-hidden="true">
+              <span class="blue-core"></span>
+              <span class="blue-satellite"></span><span class="blue-satellite"></span>
+              <span class="blue-satellite"></span><span class="blue-satellite"></span>
+              <span class="blue-satellite"></span><span class="blue-satellite"></span>
+              <span class="blue-satellite"></span><span class="blue-satellite"></span>
+            </div>
+          </article>
+          <article class="service-card gold" aria-label="大师版套餐" tabindex="0" role="button" aria-pressed="false">
+            <div class="gold-scene" aria-hidden="true">
+              <div class="gold-tile-rows">
+                <div class="gold-tile-row"><div class="gold-tile-track"></div></div>
+                <div class="gold-tile-row"><div class="gold-tile-track"></div></div>
+                <div class="gold-tile-row"><div class="gold-tile-track"></div></div>
+              </div>
+              <div class="gold-core"></div>
+            </div>
+          </article>
+        </section>
+        <section class="detail-panel" aria-label="服务包详细内容">
+          <div class="detail-toolbar"><button class="detail-back" id="back-to-packages" type="button"><span aria-hidden="true">←</span>返回上一级</button></div>
+          <div class="detail-tiles" aria-hidden="true">
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+            <div class="placeholder-card"><div class="placeholder-block"></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <footer class="ticker">
+      <span class="label">沪指</span><span>3811.9&nbsp; −30.29&nbsp; −0.79%</span>
+      <span class="label">深指</span><span>12620.9&nbsp; −266.72&nbsp; −2.07%</span>
+      <span>8709.44亿</span><span class="label">创业</span><span>3036.66&nbsp; −98.62&nbsp; −3.15%</span>
+      <span>4252.72亿</span><span class="clock">2026-10-08 15:06:37</span>
+    </footer>
+  </div>
+  <script>
+    // Navigation and toolbar controls provide local visual feedback only.
+    const navItems = [...document.querySelectorAll('.nav-item')];
+    const clickableControls = [...document.querySelectorAll('.top-tab, .action')];
+    const packageItems = [...document.querySelectorAll('.service-card')];
+    const mainContent = document.querySelector('.main');
+    const backButton = document.querySelector('#back-to-packages');
+    const demoCard = document.querySelector('.service-card.red');
+    const blueCard = document.querySelector('.service-card.blue');
+    const blueSatellites = [...blueCard.querySelectorAll('.blue-satellite')];
+    const goldCard = document.querySelector('.service-card.gold');
+    const goldTileTracks = [...goldCard.querySelectorAll('.gold-tile-track')];
+    goldTileTracks.forEach(track => {
+      const sequence = document.createDocumentFragment();
+      for (let index = 0; index < 7; index += 1) {
+        const tile = document.createElement('span');
+        tile.className = 'gold-tile';
+        sequence.append(tile);
+      }
+      track.append(sequence);
+      [...track.children].forEach(tile => track.append(tile.cloneNode()));
+    });
+    const orbitIcons = [...demoCard.querySelectorAll('.orbit-icon')];
+    let orbitFrame = 0;
+    let orbitStartedAt = 0;
+
+    function stopOrbit() {
+      if (orbitFrame) cancelAnimationFrame(orbitFrame);
+      orbitFrame = 0;
+      demoCard.classList.remove('orbit-active');
+      orbitIcons.forEach(icon => {
+        icon.style.opacity = '0';
+        icon.style.filter = 'blur(7px)';
+        icon.style.transform = 'translate3d(0, 0, -70px) scale(.62)';
+      });
+    }
+    function orbitStep(now) {
+      if (mainContent.classList.contains('detail-view') || (!demoCard.matches(':hover') && !demoCard.matches(':focus-visible'))) {
+        stopOrbit();
+        return;
+      }
+      const elapsed = now - orbitStartedAt;
+      const turn = elapsed * (Math.PI * 2 / 26000);
+      orbitIcons.forEach((icon, index) => {
+        const reveal = Math.max(0, Math.min(1, (elapsed - index * 45) / 820));
+        const spread = 1 - Math.pow(1 - reveal, 3);
+        const angle = turn + index * (Math.PI * 2 / orbitIcons.length);
+        const depth = Math.sin(angle);
+        const front = (depth + 1) / 2;
+        const x = Math.cos(angle) * 250 * spread;
+        const y = depth * 220 * spread;
+        const z = depth * 118 * spread - 75 * (1 - spread);
+        const scale = (.58 + front * .54) * (.48 + spread * .52);
+        icon.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(${scale.toFixed(3)})`;
+        icon.style.opacity = (spread * (.16 + front * .84)).toFixed(3);
+        icon.style.filter = `blur(${(7 * (1 - spread) + (1 - front) * 4.5).toFixed(2)}px) brightness(${(.68 + front * .52).toFixed(2)})`;
+      });
+      orbitFrame = requestAnimationFrame(orbitStep);
+    }
+    function startOrbit() {
+      if (mainContent.classList.contains('detail-view') || orbitFrame) return;
+      demoCard.classList.add('orbit-active');
+      orbitStartedAt = performance.now();
+      orbitFrame = requestAnimationFrame(orbitStep);
+    }
+    demoCard.addEventListener('pointerenter', startOrbit);
+    demoCard.addEventListener('pointerleave', stopOrbit);
+    demoCard.addEventListener('focusin', startOrbit);
+    demoCard.addEventListener('focusout', stopOrbit);
+
+    function startBlueShowcase() {
+      if (mainContent.classList.contains('detail-view') || blueCard.classList.contains('blue-card-active')) return;
+      const layout = [
+        { x: 22, y: 35, size: 200, depth: -72 }, { x: 50, y: 27, size: 230, depth: 44 },
+        { x: 78, y: 37, size: 215, depth: -38 }, { x: 84, y: 56, size: 255, depth: 72 },
+        { x: 73, y: 76, size: 220, depth: -56 }, { x: 48, y: 84, size: 245, depth: 62 },
+        { x: 24, y: 74, size: 205, depth: -84 }, { x: 15, y: 53, size: 260, depth: 32 }
+      ];
+      blueSatellites.forEach((icon, index) => {
+        const point = layout[index];
+        icon.style.setProperty('--x', `${point.x}%`);
+        icon.style.setProperty('--y', `${point.y}%`);
+        icon.style.setProperty('--size', `${point.size}px`);
+        icon.style.setProperty('--height', `${(point.size * 9 / 16).toFixed(2)}px`);
+        icon.style.setProperty('--depth', `${point.depth}px`);
+        icon.style.setProperty('--delay', `${(Math.random() * 1.3).toFixed(2)}s`);
+        icon.style.setProperty('--duration', `${(4.4 + Math.random() * 3).toFixed(2)}s`);
+        icon.style.setProperty('--drift', `${(Math.random() * 34 - 17).toFixed(0)}px`);
+      });
+      blueCard.classList.add('blue-card-active');
+    }
+    function stopBlueShowcase() { blueCard.classList.remove('blue-card-active'); }
+    blueCard.addEventListener('pointerenter', startBlueShowcase);
+    blueCard.addEventListener('pointerleave', stopBlueShowcase);
+    blueCard.addEventListener('focusin', startBlueShowcase);
+    blueCard.addEventListener('focusout', stopBlueShowcase);
+    const startGoldRoll = () => goldCard.classList.add('gold-card-active');
+    const stopGoldRoll = () => goldCard.classList.remove('gold-card-active');
+    goldCard.addEventListener('pointerenter', startGoldRoll);
+    goldCard.addEventListener('pointerleave', stopGoldRoll);
+    goldCard.addEventListener('focusin', startGoldRoll);
+    goldCard.addEventListener('focusout', stopGoldRoll);
+
+    function activateNav(item) {
+      navItems.forEach(entry => {
+        entry.classList.toggle('active', entry === item);
+        if (entry === item) entry.setAttribute('aria-current', 'page');
+        else entry.removeAttribute('aria-current');
+      });
+    }
+    function toggleControl(control) {
+      control.classList.toggle('selected');
+    }
+    function addKeyboardActivation(elements, activate) {
+      elements.forEach(element => element.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          activate(element);
+        }
+      }));
+    }
+    navItems.forEach(item => item.addEventListener('click', () => activateNav(item)));
+    clickableControls.forEach(control => control.addEventListener('click', () => toggleControl(control)));
+    addKeyboardActivation(navItems, activateNav);
+    addKeyboardActivation(clickableControls, toggleControl);
+    function selectPackage(item) {
+      const enteringDetails = !mainContent.classList.contains('detail-view');
+      if (enteringDetails) {
+        if (mainContent.classList.contains('leaving')) return;
+        stopOrbit();
+        stopBlueShowcase();
+        stopGoldRoll();
+        mainContent.classList.add('leaving');
+        packageItems.forEach(entry => {
+          const selected = entry === item;
+          entry.classList.toggle('selected', selected);
+          entry.classList.toggle('leave-lead', entry === goldCard);
+          entry.classList.toggle('leave-second', entry === blueCard);
+          entry.classList.toggle('leave-third', entry === demoCard);
+          entry.setAttribute('aria-pressed', String(selected));
+        });
+        window.setTimeout(() => {
+          mainContent.classList.remove('leaving');
+          packageItems.forEach(entry => entry.classList.remove('leave-lead', 'leave-second', 'leave-third'));
+          mainContent.classList.add('detail-view', 'opening');
+          window.setTimeout(() => mainContent.classList.remove('opening'), 450);
+        }, 480);
+        return;
+      }
+      packageItems.forEach(entry => {
+        const selected = entry === item;
+        entry.classList.toggle('selected', selected);
+        entry.setAttribute('aria-pressed', String(selected));
+      });
+    }
+    backButton.addEventListener('click', () => {
+      mainContent.classList.remove('detail-view', 'opening');
+      packageItems.forEach(item => {
+        item.classList.remove('selected');
+        item.setAttribute('aria-pressed', 'false');
+      });
+    });
+    packageItems.forEach(item => {
+      item.addEventListener('click', () => selectPackage(item));
+      item.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectPackage(item);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
