@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI量化选股决策系统</title>
+  <title></title>
   <style>
     @property --edge-angle {
       syntax: "<angle>";
@@ -196,6 +196,21 @@
     .ticker { display: flex; align-items: center; gap: 11px; overflow: hidden; padding: 0 5px; background: #303236; border-top: 1px solid #404348; color: var(--green); font-size: 11px; white-space: nowrap; }
     .ticker .label { color: #d0d3d8; }
     .clock { margin-left: auto; color: #c0c4cb; padding: 0 6px; }
+    /* Text-free presentation: preserve the dashboard structure and its icon controls. */
+    .app { grid-template-rows: 33px 1fr 0; }
+    .brand > span:not(.brand-mark), .user, .nav-item > span:not(.nav-icon),
+    .search > span:not(:first-child) { display: none; }
+    .top-tab { width: 30px; justify-content: center; padding: 0; font-size: 0; }
+    .top-tab::before { font-size: 14px; }
+    .top-tab:nth-of-type(2)::before { content: "♙"; }
+    .top-tab:nth-of-type(3)::before { content: "♫"; }
+    .action { min-width: 30px; justify-content: center; padding: 0 7px; font-size: 0; }
+    .action:not(.hide-mobile)::before { font-size: 13px; }
+    .action:nth-of-type(7)::before { content: "◉"; }
+    .action:nth-of-type(8)::before { content: "⚙"; }
+    .ticker { display: none; }
+    .detail-back { font-size: 0; }
+    .detail-back span { font-size: 14px; }
     @media (max-width: 720px) {
       .brand { font-size: 13px; }
       .top-tab { display: none; }
